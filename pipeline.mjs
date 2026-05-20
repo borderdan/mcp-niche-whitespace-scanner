@@ -1,6 +1,5 @@
 import fs from 'fs';
 import https from 'https';
-import { execSync } from 'child_process';
 
 const LOG_FILE = 'pipeline.log';
 const OUTPUT_FILE = 'public/data.json';
