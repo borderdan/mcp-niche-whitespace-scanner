@@ -1,0 +1,33 @@
+{
+  "lastUpdated": "2026-05-20T20:52:44.506Z",
+  "servers": [
+    {
+      "name": "io.github.domdomegg/airtable-mcp-server",
+      "description": "Read and write access to Airtable database schemas, tables, and records.",
+      "url": "https://github.com/domdomegg/airtable-mcp-server.git",
+      "stars": 444,
+      "lastUpdated": "2026-05-09T01:23:04Z"
+    },
+    {
+      "name": "io.github.domdomegg/airtable-mcp-server",
+      "description": "Read and write access to Airtable database schemas, tables, and records.",
+      "url": "https://github.com/domdomegg/airtable-mcp-server.git",
+      "stars": 444,
+      "lastUpdated": "2026-05-09T01:23:04Z"
+    },
+    {
+      "name": "io.github.domdomegg/time-mcp-nuget",
+      "description": "Get the current UTC time in RFC 3339 format.",
+      "url": "https://github.com/domdomegg/time-mcp-nuget.git",
+      "stars": 1,
+      "lastUpdated": "2025-10-26T01:49:00Z"
+    },
+    {
+      "name": "io.github.domdomegg/time-mcp-pypi",
+      "description": "Get the current UTC time in RFC 3339 format.",
+      "url": "https://github.com/domdomegg/time-mcp-pypi.git",
+      "stars": 4,
+      "lastUpdated": "2025-10-26T01:44:40Z"
+    }
+  ]
+}
