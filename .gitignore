@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.local
+
+# Logs
+*.log
+dev_output.log
+npm_output.log
+vite_output.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jules artifacts
+verification*.png
