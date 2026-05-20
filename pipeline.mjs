@@ -59,10 +59,37 @@ async function handleRateLimit(error) {
   return false;
 }
 
+async function getGithubSearchRepos() {
+  const maxRetries = 3;
+  let retries = 0;
+  // Fetch up to 100 top MCP server repos by stars
+  const searchUrl = 'https://api.github.com/search/repositories?q=topic:mcp-server&sort=stars&order=desc&per_page=100';
+
+  while (retries < maxRetries) {
+    try {
+      log(`Fetching GitHub search stats...`);
+      await sleep(100);
+
+      const headers = process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {};
+      const { data: searchData } = await fetchJson(searchUrl, { headers });
+
+      return searchData.items || [];
+    } catch (error) {
+      if (error.status === 403 || error.status === 429) {
+         const handled = await handleRateLimit(error);
+         if (handled) {
+            retries++;
+            continue;
+         }
+      }
+      log(`Error fetching GitHub search: ${error.message || JSON.stringify(error)}`);
+      return [];
+    }
+  }
+  return [];
+}
 
 async function getGithubStats(repoUrl) {
-  // Extract owner and repo from url (e.g., https://github.com/domdomegg/airtable-mcp-server.git)
-  // Fix the regex to allow dots in repo names
   const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
   if (!match) return null;
 
@@ -74,13 +101,11 @@ async function getGithubStats(repoUrl) {
 
   while (retries < maxRetries) {
     try {
-      log(`Fetching GitHub stats for ${owner}/${repo}...`);
+      log(`Fetching individual GitHub stats for ${owner}/${repo}...`);
       await sleep(100);
 
       const headers = process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {};
-
       const { data: repoData } = await fetchJson(`https://api.github.com/repos/${owner}/${repo}`, { headers });
-
       const defaultBranch = repoData.default_branch || 'main';
       const { data: commitData } = await fetchJson(`https://api.github.com/repos/${owner}/${repo}/commits/${defaultBranch}`, { headers });
 
@@ -89,15 +114,15 @@ async function getGithubStats(repoUrl) {
         lastUpdated: commitData.commit.author.date
       };
     } catch (error) {
-      if (error.status === 403 || error.status === 429) {
+       if (error.status === 403 || error.status === 429) {
          const handled = await handleRateLimit(error);
          if (handled) {
             retries++;
             continue;
          }
-      }
-      log(`Error fetching GitHub stats for ${repoUrl}: ${error.message || JSON.stringify(error)}`);
-      return null;
+       }
+       log(`Error fetching individual GitHub stats for ${repoUrl}: ${error.message || JSON.stringify(error)}`);
+       return null;
     }
   }
   return null;
@@ -112,51 +137,86 @@ async function run() {
   }
 
   try {
+    const processedServers = new Map();
+    let seedServers = [];
+
     log(`Fetching seed.json from ${REGISTRY_SEED_URL}...`);
-    const { data: seedData } = await fetchJson(REGISTRY_SEED_URL);
-    log(`Successfully fetched ${seedData.length} servers from seed.json`);
+    try {
+        const { data: seedData } = await fetchJson(REGISTRY_SEED_URL);
+        log(`Successfully fetched ${seedData.length} servers from seed.json`);
+        seedServers = seedData;
+    } catch (error) {
+        log(`Warning: Failed to fetch seed.json: ${error.message}`);
+    }
 
-    const processedServers = [];
+    const githubItems = await getGithubSearchRepos();
+    log(`Successfully fetched ${githubItems.length} repos from GitHub search.`);
 
-    for (const server of seedData) {
-      if (server.repository && server.repository.url && server.repository.url.includes('github.com')) {
-        const stats = await getGithubStats(server.repository.url);
+    // Add all github search results
+    for (const item of githubItems) {
+        processedServers.set(item.full_name, {
+            name: item.full_name,
+            description: item.description || '',
+            url: item.html_url,
+            stars: item.stargazers_count,
+            lastUpdated: item.pushed_at || item.updated_at || new Date().toISOString(),
+        });
+    }
 
-        if (stats) {
-          processedServers.push({
-            name: server.name || server.repository.url.split('/').pop(),
-            description: server.description || '',
-            url: server.repository.url,
-            stars: stats.stars,
-            lastUpdated: stats.lastUpdated,
-          });
+    // Now process seed servers and fall back to fetching individual stats if they weren't in the search
+    for (const server of seedServers) {
+        let foundInSearch = false;
+
+        if (server.repository && server.repository.url && server.repository.url.includes('github.com')) {
+           // Try to find if it was already caught in the top 100 search
+           for (const existingServer of processedServers.values()) {
+              if (server.repository.url.includes(existingServer.url)) {
+                 foundInSearch = true;
+                 // Override the name to match the registry
+                 existingServer.name = server.name;
+                 break;
+              }
+           }
+
+           if (!foundInSearch) {
+              // Not in top 100, we need to fetch its stats manually to avoid 0 stars / fake date
+              const stats = await getGithubStats(server.repository.url);
+              if (stats) {
+                 processedServers.set(server.name, {
+                    name: server.name || server.repository.url.split('/').pop(),
+                    description: server.description || '',
+                    url: server.repository.url,
+                    stars: stats.stars,
+                    lastUpdated: stats.lastUpdated,
+                 });
+              } else {
+                 processedServers.set(server.name, {
+                    name: server.name || server.repository.url.split('/').pop(),
+                    description: server.description || '',
+                    url: server.repository.url,
+                    stars: 0,
+                    lastUpdated: new Date().toISOString(),
+                 });
+              }
+           }
         } else {
-          processedServers.push({
-            name: server.name || server.repository.url.split('/').pop(),
-            description: server.description || '',
-            url: server.repository.url,
-            stars: 0,
-            lastUpdated: new Date().toISOString(),
-          });
+           processedServers.set(server.name, {
+              name: server.name || 'Unknown',
+              description: server.description || '',
+              url: server.repository?.url || '',
+              stars: 0,
+              lastUpdated: new Date().toISOString(),
+           });
         }
-      } else {
-          processedServers.push({
-            name: server.name || 'Unknown',
-            description: server.description || '',
-            url: server.repository?.url || '',
-            stars: 0,
-            lastUpdated: new Date().toISOString(),
-          });
-      }
     }
 
     const outputData = {
       lastUpdated: new Date().toISOString(),
-      servers: processedServers
+      servers: Array.from(processedServers.values()).sort((a, b) => b.stars - a.stars)
     };
 
     fs.writeFileSync(OUTPUT_FILE, JSON.stringify(outputData, null, 2));
-    log(`Successfully wrote ${processedServers.length} servers to ${OUTPUT_FILE}`);
+    log(`Successfully wrote ${outputData.servers.length} servers to ${OUTPUT_FILE}`);
 
   } catch (error) {
     log(`Pipeline failed: ${error.message}`);
